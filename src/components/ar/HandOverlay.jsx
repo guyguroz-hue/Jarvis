@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { HAND_CONNECTIONS, LM, toScreenSpace } from '../../lib/handUtils'
+import { HAND_CONNECTIONS, LM } from '../../lib/handUtils'
+import { projectLandmark } from '../../lib/projection'
 
 /**
  * Draws the hand skeleton onto a 2D canvas (z-5), beneath the 3D scene.
@@ -8,7 +9,7 @@ import { HAND_CONNECTIONS, LM, toScreenSpace } from '../../lib/handUtils'
  * as props — props would force a React re-render every frame, which is exactly
  * what the tracking hook's ref-based design avoids.
  */
-export default function HandOverlay({ handsRef, mirrored = true, active = false }) {
+export default function HandOverlay({ handsRef, videoRef, mirrored = true, active = false }) {
   const canvasRef = useRef(null)
 
   useEffect(() => {
@@ -39,9 +40,15 @@ export default function HandOverlay({ handsRef, mirrored = true, active = false 
       const { hands } = handsRef.current
       if (!hands.length) return
 
+      // Compensate for object-cover cropping, or the skeleton drifts off the
+      // real hand the further it moves from centre.
+      const video = videoRef?.current
+      const vw = video?.videoWidth ?? 0
+      const vh = video?.videoHeight ?? 0
+
       for (const hand of hands) {
         const pts = hand.landmarks.map((l) => {
-          const s = toScreenSpace(l, mirrored)
+          const s = projectLandmark(l, vw, vh, w, h, mirrored)
           return { x: s.x * w, y: s.y * h }
         })
 
@@ -97,7 +104,7 @@ export default function HandOverlay({ handsRef, mirrored = true, active = false 
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', resize)
     }
-  }, [handsRef, mirrored, active])
+  }, [handsRef, videoRef, mirrored, active])
 
   return (
     <canvas

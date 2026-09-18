@@ -19,7 +19,7 @@ voice-driven AI assistant.
 
 - [x] **Phase 1** — Architecture, toolchain, HUD shell
 - [x] **Phase 2** — AR camera layer + MediaPipe hand-tracking hook
-- [ ] **Phase 3** — R3F canvas, hand coords mapped to a 3D object
+- [x] **Phase 3** — R3F canvas, hand coords mapped to a 3D object
 - [ ] **Phase 4** — Sci-fi HUD panels (telemetry, logs)
 - [ ] **Phase 5** — Voice hooks + SiliconFlow brain
 - [ ] **Phase 6** — Full integration
@@ -31,9 +31,22 @@ The interface is three stacked full-screen layers:
 ```
 z-0   <video>   AR camera feed          (Phase 2) ✅
 z-5   <canvas>  hand skeleton overlay   (Phase 2) ✅
-z-10  <Canvas>  React Three Fiber scene (Phase 3)
+z-10  <Canvas>  React Three Fiber scene (Phase 3) ✅
 z-20  <div>     Tailwind HUD overlay    (Phase 4)
 ```
+
+### Coordinate projection
+
+`src/lib/projection.js` is the single source of truth for landmark -> screen ->
+world mapping, and every consumer must go through it.
+
+MediaPipe reports landmarks normalized to the **raw video frame**, but the feed
+is rendered with `object-cover`, which crops to fill the viewport. On a portrait
+phone showing a 1280x720 stream only ~26% of the video width is actually on
+screen — so mapping a landmark straight to screen space misplaces it badly.
+`projectLandmark()` compensates for that crop and for selfie mirroring.
+
+Run `npm test` to exercise the projection maths.
 
 ### Tracking performance contract
 
@@ -64,6 +77,7 @@ src/
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # production build -> dist/
+npm test         # projection maths
 ```
 
 `server.host` is enabled, so the dev server also prints a LAN address you can

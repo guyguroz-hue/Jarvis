@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { LM, toScreenSpace } from '../../lib/handUtils'
+import { LM } from '../../lib/handUtils'
+import { projectLandmark } from '../../lib/projection'
 
 /**
  * Live XYZ + pinch readout.
@@ -8,7 +9,7 @@ import { LM, toScreenSpace } from '../../lib/handUtils'
  * these through React state would re-render the tree ~60x/second for the sake of
  * a few digits — the exact cost the tracking architecture exists to avoid.
  */
-export default function TrackingPanel({ handsRef, telemetry, mirrored, active }) {
+export default function TrackingPanel({ handsRef, videoRef, telemetry, mirrored, active }) {
   const xRef = useRef(null)
   const yRef = useRef(null)
   const zRef = useRef(null)
@@ -36,7 +37,15 @@ export default function TrackingPanel({ handsRef, telemetry, mirrored, active })
         return
       }
 
-      const p = toScreenSpace(hand.landmarks[LM.INDEX_TIP], mirrored)
+      const video = videoRef?.current
+      const p = projectLandmark(
+        hand.landmarks[LM.INDEX_TIP],
+        video?.videoWidth ?? 0,
+        video?.videoHeight ?? 0,
+        window.innerWidth,
+        window.innerHeight,
+        mirrored
+      )
       xRef.current.textContent = p.x.toFixed(3)
       yRef.current.textContent = p.y.toFixed(3)
       zRef.current.textContent = p.z.toFixed(3)
@@ -50,7 +59,7 @@ export default function TrackingPanel({ handsRef, telemetry, mirrored, active })
 
     raf = requestAnimationFrame(update)
     return () => cancelAnimationFrame(raf)
-  }, [handsRef, mirrored, active])
+  }, [handsRef, videoRef, mirrored, active])
 
   return (
     <div className="glass-panel hud-corners p-3">

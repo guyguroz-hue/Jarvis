@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import CameraFeed from './components/ar/CameraFeed'
 import HandOverlay from './components/ar/HandOverlay'
 import BootPanel from './components/hud/BootPanel'
@@ -7,6 +7,13 @@ import TrackingPanel from './components/hud/TrackingPanel'
 import { useCamera } from './hooks/useCamera'
 import { useHandTracking } from './hooks/useHandTracking'
 import { SYSTEM } from './lib/constants'
+
+/**
+ * Three.js is ~800KB. Lazy-loading keeps it out of the initial page load, so
+ * the HUD boots instantly and the 3D engine is fetched only when the camera
+ * goes live and the scene actually mounts.
+ */
+const Scene = lazy(() => import('./components/three/Scene'))
 
 /**
  * Root shell.
@@ -19,6 +26,7 @@ import { SYSTEM } from './lib/constants'
  */
 export default function App() {
   const [booted, setBooted] = useState(false)
+  const [gesture, setGesture] = useState('idle')
   const [clock, setClock] = useState(() => new Date())
 
   const camera = useCamera({ facingMode: 'user' })
@@ -35,6 +43,7 @@ export default function App() {
 
   const statusOverrides = {
     camera: live ? 'online' : camera.status === 'error' ? 'offline' : 'standby',
+    spatial: live ? 'online' : 'standby',
     hands:
       tracking.status === 'tracking'
         ? 'online'
@@ -51,9 +60,23 @@ export default function App() {
       {/* z-5 — hand skeleton */}
       <HandOverlay
         handsRef={tracking.handsRef}
+        videoRef={camera.videoRef}
         mirrored={camera.isMirrored}
         active={tracking.status === 'tracking'}
       />
+
+      {/* z-10 — spatial scene. Mounted only once the feed is live so the
+          WebGL context isn't created while the user is still at the gate. */}
+      {live && (
+        <Suspense fallback={null}>
+          <Scene
+            handsRef={tracking.handsRef}
+            videoRef={camera.videoRef}
+            mirrored={camera.isMirrored}
+            onGesture={setGesture}
+          />
+        </Suspense>
+      )}
 
       {/* Ambient grid + scanlines, only while the camera is off */}
       {!live && (
@@ -131,6 +154,7 @@ export default function App() {
             <div className="pointer-events-auto ml-auto w-44 self-start sm:w-52">
               <TrackingPanel
                 handsRef={tracking.handsRef}
+                videoRef={camera.videoRef}
                 telemetry={tracking.telemetry}
                 mirrored={camera.isMirrored}
                 active={tracking.status === 'tracking'}
@@ -157,6 +181,15 @@ export default function App() {
           </p>
 
           <div className="flex items-center gap-3">
+            {live && (
+              <span
+                className={`font-display text-[9px] uppercase tracking-widest ${
+                  gesture === 'idle' ? 'text-jarvis-ice/40' : 'text-jarvis-amber'
+                }`}
+              >
+                {gesture}
+              </span>
+            )}
             {live && (
               <button
                 onClick={camera.flip}

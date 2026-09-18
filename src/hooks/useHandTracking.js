@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MEDIAPIPE } from '../lib/constants'
-import { palmCenter, pinchPoint, pinchStrength, smooth } from '../lib/handUtils'
+import { handScale, palmCenter, pinchPoint, pinchStrength, smooth } from '../lib/handUtils'
 
 /**
  * Real-time hand tracking driven by requestAnimationFrame.
@@ -121,6 +121,8 @@ export function useHandTracking(videoRef, { enabled = false, maxHands = MEDIAPIP
           isPinching: pinch > MEDIAPIPE.pinchThreshold,
           palm: palmCenter(landmarks),
           pinchPoint: pinchPoint(landmarks),
+          // Apparent palm size — used as a stable depth proxy (see projection.js).
+          scale: handScale(landmarks),
         }
       })
 
