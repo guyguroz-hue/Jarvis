@@ -21,7 +21,7 @@ voice-driven AI assistant.
 - [x] **Phase 2** — AR camera layer + MediaPipe hand-tracking hook
 - [x] **Phase 3** — R3F canvas, hand coords mapped to a 3D object
 - [x] **Phase 4** — Sci-fi HUD panels (telemetry, logs)
-- [ ] **Phase 5** — Voice hooks + SiliconFlow brain
+- [x] **Phase 5** — Voice hooks + SiliconFlow brain
 - [ ] **Phase 6** — Full integration
 
 ## Layering model
@@ -129,12 +129,40 @@ Vite — no configuration needed.
 | Build command    | `npm run build` |
 | Output directory | `dist`          |
 
-## A note on the API key
+## Configuring the AI
 
-The SiliconFlow key must **never** be exposed as a `VITE_*` variable — anything
+Set these in **Vercel → Project → Settings → Environment Variables**, then
+redeploy. None of them carry a `VITE_` prefix, and that is the point: anything
 prefixed `VITE_` is inlined into the public JS bundle and readable by any
-visitor. From Phase 5 the key is set in Vercel as `SILICONFLOW_API_KEY`
-(no `VITE_` prefix) and used only inside `api/chat.js`, server-side.
+visitor. These are read only inside `api/chat.js`, server-side.
+
+| Variable | Required | Default |
+| --- | --- | --- |
+| `SILICONFLOW_API_KEY` | yes | — |
+| `SILICONFLOW_MODEL` | no | `Qwen/Qwen2.5-7B-Instruct` |
+| `SILICONFLOW_BASE_URL` | no | `https://api.siliconflow.cn/v1` |
+
+### Endpoint exposure
+
+`/api/chat` is unauthenticated. Anyone who finds the URL can spend your API
+credit. The function caps conversation length, message count and `max_tokens`,
+and rejects cross-origin requests — but an `Origin` header is trivially forged
+outside a browser, so treat these as damage limiting, not access control. If
+the deployment is ever public, put real authentication in front of it.
+
+## Voice
+
+- Recognition is Chrome/Edge/Safari only — **Firefox has no SpeechRecognition**.
+- Continuous listening is gated on a wake word (`lib/wake.js`); the mic never
+  acts on ordinary conversation.
+- Recognition is suspended for the duration of every spoken reply. Without
+  that, the microphone transcribes the synthesised voice and the assistant
+  answers itself in a loop.
+- "Continuous" listening is really a restart loop, because browsers end
+  sessions on their own. It does not restart after a permanent failure such as
+  a denied microphone.
+- iOS gates the first utterance behind a user gesture, so arming the voice
+  speaks a silent utterance from inside the tap to unlock synthesis.
 
 ## Browser requirements
 

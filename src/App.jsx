@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import CameraFeed from './components/ar/CameraFeed'
 import HandOverlay from './components/ar/HandOverlay'
+import AssistantPanel from './components/hud/AssistantPanel'
 import BootPanel from './components/hud/BootPanel'
 import HudFrame from './components/hud/HudFrame'
 import Reticle from './components/hud/Reticle'
@@ -10,6 +11,7 @@ import TrackingPanel from './components/hud/TrackingPanel'
 import VitalsPanel from './components/hud/VitalsPanel'
 import { useCamera } from './hooks/useCamera'
 import { useDeviceTelemetry } from './hooks/useDeviceTelemetry'
+import { useAssistant } from './hooks/useAssistant'
 import { useHandTracking } from './hooks/useHandTracking'
 import { useSystemLog } from './hooks/useSystemLog'
 import { SYSTEM } from './lib/constants'
@@ -40,12 +42,14 @@ export default function App() {
   // the header and footer for an unobstructed AR view.
   const [density, setDensity] = useState('full')
   const [logExpanded, setLogExpanded] = useState(false)
+  const [lang, setLang] = useState('he-IL')
 
   const camera = useCamera({ facingMode: 'user' })
   const live = camera.status === 'live'
   const tracking = useHandTracking(camera.videoRef, { enabled: live })
   const vitals = useDeviceTelemetry()
   const { entries, log } = useSystemLog()
+  const assistant = useAssistant({ lang, log })
 
   useEffect(() => {
     const id = setInterval(() => setClock(new Date()), 1000)
@@ -90,6 +94,8 @@ export default function App() {
         : tracking.status === 'error'
           ? 'offline'
           : 'standby',
+    voice: assistant.armed ? 'online' : 'standby',
+    neural: assistant.status === 'error' ? 'offline' : assistant.query ? 'online' : 'standby',
   }
 
   const showPanels = live && density === 'full'
@@ -221,6 +227,11 @@ export default function App() {
 
             {showPanels && (
               <div className="pointer-events-auto space-y-2">
+                <AssistantPanel
+                  assistant={assistant}
+                  lang={lang}
+                  onToggleLang={() => setLang((l) => (l.startsWith('he') ? 'en-US' : 'he-IL'))}
+                />
                 <VitalsPanel vitals={vitals} />
                 <SystemLog
                   entries={entries}
@@ -241,6 +252,11 @@ export default function App() {
           </p>
 
           <div className="flex items-center gap-2">
+            {live && assistant.armed && (
+              <span className="font-display text-[9px] uppercase tracking-widest text-jarvis-ok">
+                {assistant.speaking ? 'TX' : assistant.listening ? 'RX' : '···'}
+              </span>
+            )}
             {live && (
               <span
                 className={`font-display text-[9px] uppercase tracking-widest ${

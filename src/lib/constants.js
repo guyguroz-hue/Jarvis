@@ -4,7 +4,7 @@ export const SYSTEM = {
   name: 'J.A.R.V.I.S.',
   subtitle: 'Just A Rather Very Intelligent System',
   version: '0.1.0',
-  build: 'PHASE-04',
+  build: 'PHASE-05',
 }
 
 // Boot lines. Each entry is [label, delayMs] — the delay is the pause BEFORE the line appears.
@@ -15,8 +15,8 @@ export const BOOT_SEQUENCE = [
   ['AR CAMERA LAYER ........... ONLINE', 300],
   ['HAND TRACKING / MEDIAPIPE . ONLINE', 260],
   ['SPATIAL ENGINE / R3F ...... ONLINE', 240],
-  ['VOICE INTERFACE ........... STANDBY', 220],
-  ['NEURAL LINK / SILICONFLOW . STANDBY', 280],
+  ['VOICE INTERFACE ........... ONLINE', 220],
+  ['NEURAL LINK / SILICONFLOW . ONLINE', 280],
 ]
 
 // Subsystem status board. Flipped to 'online' as each phase lands.
