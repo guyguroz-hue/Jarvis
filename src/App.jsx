@@ -190,6 +190,18 @@ export default function App() {
                 {gesture}
               </span>
             )}
+            {live && camera.torch.supported && (
+              <button
+                onClick={camera.toggleTorch}
+                className={`pointer-events-auto rounded border px-2 py-1 font-display text-[9px] uppercase tracking-widest active:bg-jarvis-amber/20 ${
+                  camera.torch.on
+                    ? 'border-jarvis-amber text-jarvis-amber'
+                    : 'border-jarvis-cyan/40 text-jarvis-cyan'
+                }`}
+              >
+                Light
+              </button>
+            )}
             {live && (
               <button
                 onClick={camera.flip}

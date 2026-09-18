@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MEDIAPIPE } from '../lib/constants'
-import { handScale, palmCenter, pinchPoint, pinchStrength, smooth } from '../lib/handUtils'
+import {
+  handScale,
+  palmCenter,
+  pinchLatch,
+  pinchPoint,
+  pinchStrength,
+  pinchStrength3D,
+  smooth,
+} from '../lib/handUtils'
 
 /**
  * Real-time hand tracking driven by requestAnimationFrame.
@@ -24,6 +32,11 @@ export function useHandTracking(videoRef, { enabled = false, maxHands = MEDIAPIP
   const lastVideoTimeRef = useRef(-1)
   const lastTimestampRef = useRef(0)
   const smoothedPinchRef = useRef([])
+  const latchedRef = useRef([]) // per-hand pinch state, for the Schmitt trigger
+
+  // Grab persistence across tracking dropouts.
+  const lastHandsRef = useRef([])
+  const lastSeenRef = useRef(0)
 
   // FPS accounting
   const frameCountRef = useRef(0)
@@ -50,9 +63,9 @@ export function useHandTracking(videoRef, { enabled = false, maxHands = MEDIAPIP
         baseOptions: { modelAssetPath: MEDIAPIPE.modelPath, delegate },
         runningMode: 'VIDEO',
         numHands: maxHands,
-        minHandDetectionConfidence: 0.5,
-        minHandPresenceConfidence: 0.5,
-        minTrackingConfidence: 0.5,
+        minHandDetectionConfidence: MEDIAPIPE.detectionConfidence,
+        minHandPresenceConfidence: MEDIAPIPE.presenceConfidence,
+        minTrackingConfidence: MEDIAPIPE.trackingConfidence,
       })
 
     let delegate = 'GPU'
@@ -105,20 +118,32 @@ export function useHandTracking(videoRef, { enabled = false, maxHands = MEDIAPIP
       // API shape differs slightly across tasks-vision releases.
       const handedness = result?.handedness ?? result?.handednesses ?? []
 
-      const hands = raw.map((landmarks, i) => {
-        const target = pinchStrength(landmarks)
-        // Smooth the pinch value — raw landmark jitter makes gestures flicker.
-        smoothedPinchRef.current[i] = smooth(smoothedPinchRef.current[i], target, 0.4)
+      let hands = raw.map((landmarks, i) => {
+        const world = result.worldLandmarks?.[i] ?? null
+
+        // Prefer the metric 3D reconstruction: unlike the projected 2D version
+        // it does not change when the hand rotates.
+        const target = world ? pinchStrength3D(world) : pinchStrength(landmarks)
+
+        smoothedPinchRef.current[i] = smooth(smoothedPinchRef.current[i], target, 0.45)
         const pinch = smoothedPinchRef.current[i]
+
+        const isPinching = pinchLatch(pinch, latchedRef.current[i] ?? false, {
+          enter: MEDIAPIPE.pinchEnter,
+          exit: MEDIAPIPE.pinchExit,
+        })
+        latchedRef.current[i] = isPinching
 
         return {
           landmarks,
-          worldLandmarks: result.worldLandmarks?.[i] ?? null,
+          worldLandmarks: world,
           // NOTE: handedness is reported for the RAW frame. In a mirrored selfie
           // view this reads inverted from the user's point of view.
           handedness: handedness[i]?.[0]?.categoryName ?? 'Unknown',
           pinch,
-          isPinching: pinch > MEDIAPIPE.pinchThreshold,
+          isPinching,
+          pinchSource: world ? '3d' : '2d',
+          stale: false,
           palm: palmCenter(landmarks),
           pinchPoint: pinchPoint(landmarks),
           // Apparent palm size — used as a stable depth proxy (see projection.js).
@@ -126,8 +151,32 @@ export function useHandTracking(videoRef, { enabled = false, maxHands = MEDIAPIP
         }
       })
 
-      // Drop smoothing slots for hands that left the frame.
-      smoothedPinchRef.current.length = hands.length
+      if (hands.length) {
+        lastHandsRef.current = hands
+        lastSeenRef.current = ts
+        smoothedPinchRef.current.length = hands.length
+        latchedRef.current.length = hands.length
+      } else {
+        /**
+         * GRAB PERSISTENCE.
+         *
+         * MediaPipe drops a hand once part of it leaves the frame, which would
+         * otherwise kill an in-progress grab the moment the wrist clips the
+         * screen edge. If the hand was pinching when we lost it, keep
+         * republishing its last known state for a short grace window, flagged
+         * stale so consumers can render it as a ghost and decide for
+         * themselves. Hands that were merely open are dropped immediately.
+         */
+        const held = lastHandsRef.current.filter((h) => h.isPinching)
+        const elapsed = ts - lastSeenRef.current
+        if (held.length && elapsed < MEDIAPIPE.trackingGraceMs) {
+          hands = held.map((h) => ({ ...h, stale: true, staleFor: elapsed }))
+        } else {
+          lastHandsRef.current = []
+          smoothedPinchRef.current.length = 0
+          latchedRef.current.length = 0
+        }
+      }
 
       handsRef.current = { hands, timestamp: ts }
 
@@ -167,6 +216,9 @@ export function useHandTracking(videoRef, { enabled = false, maxHands = MEDIAPIP
       rafRef.current = null
       handsRef.current = { hands: [], timestamp: 0 }
       smoothedPinchRef.current = []
+      latchedRef.current = []
+      lastHandsRef.current = []
+      lastSeenRef.current = 0
       lastVideoTimeRef.current = -1
       setStatus('idle')
       setTelemetry((t) => ({ ...t, handCount: 0, fps: 0 }))

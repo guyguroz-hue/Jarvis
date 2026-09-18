@@ -48,6 +48,26 @@ screen — so mapping a landmark straight to screen space misplaces it badly.
 
 Run `npm test` to exercise the projection maths.
 
+### Gesture robustness
+
+Three properties the naive implementation lacked:
+
+- **Rotation invariance.** Pinch strength is measured on MediaPipe's
+  `worldLandmarks` — metric 3D coordinates in metres — not on projected 2D
+  points. A projected measurement foreshortens as the hand turns, so a closed
+  pinch reads as open past roughly 70 degrees of tilt. See
+  `handUtils.test.js`.
+- **Hysteresis.** `pinchLatch()` is a Schmitt trigger: engaging a pinch needs a
+  firmer grip than holding one. A single threshold chatters when the signal
+  hovers near it.
+- **Grab persistence.** MediaPipe drops a hand once part of it leaves frame.
+  A hand that was pinching keeps being republished for `trackingGraceMs` with
+  `stale: true`, so a grab survives the dropout instead of dying when the wrist
+  clips the screen edge. Stale hands render as faded ghosts.
+
+Position is smoothed with a **One Euro filter** (`lib/filters.js`) rather than a
+fixed lerp, which cannot be both jitter-free at rest and low-lag in motion.
+
 ### Tracking performance contract
 
 Per-frame landmark data is written to a **ref** (`handsRef`), never to React

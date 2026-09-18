@@ -13,6 +13,7 @@ export function useCamera({ facingMode = 'user', width = 1280, height = 720 } = 
   const [status, setStatus] = useState('idle') // idle | requesting | live | error
   const [error, setError] = useState(null)
   const [facing, setFacing] = useState(facingMode)
+  const [torch, setTorch] = useState({ supported: false, on: false })
 
   const stop = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop())
@@ -53,6 +54,12 @@ export function useCamera({ facingMode = 'user', width = 1280, height = 720 } = 
         video.srcObject = stream
         await video.play()
         setStatus('live')
+
+        // Torch helps a lot in a dim room — MediaPipe needs contrast to find a
+        // hand. Only some devices expose it, and generally only the rear camera.
+        const track = stream.getVideoTracks()[0]
+        const caps = track?.getCapabilities?.() ?? {}
+        setTorch({ supported: Boolean(caps.torch), on: false })
       } catch (err) {
         setStatus('error')
         setError(describeCameraError(err))
@@ -60,6 +67,19 @@ export function useCamera({ facingMode = 'user', width = 1280, height = 720 } = 
     },
     [facing, width, height]
   )
+
+  /** Toggle the camera LED, where the device supports it. */
+  const toggleTorch = useCallback(async () => {
+    const track = streamRef.current?.getVideoTracks()[0]
+    if (!track?.getCapabilities?.().torch) return
+    const next = !torch.on
+    try {
+      await track.applyConstraints({ advanced: [{ torch: next }] })
+      setTorch((t) => ({ ...t, on: next }))
+    } catch (err) {
+      console.warn('[JARVIS] torch unavailable:', err)
+    }
+  }, [torch.on])
 
   const flip = useCallback(() => {
     start(facing === 'user' ? 'environment' : 'user')
@@ -76,6 +96,8 @@ export function useCamera({ facingMode = 'user', width = 1280, height = 720 } = 
     status,
     error,
     facing,
+    torch,
+    toggleTorch,
     isMirrored: facing === 'user', // selfie view must be mirrored to feel natural
   }
 }

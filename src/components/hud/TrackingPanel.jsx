@@ -50,10 +50,13 @@ export default function TrackingPanel({ handsRef, videoRef, telemetry, mirrored,
       yRef.current.textContent = p.y.toFixed(3)
       zRef.current.textContent = p.z.toFixed(3)
       pinchRef.current.textContent = `${Math.round(hand.pinch * 100)}%`
-      handRef.current.textContent = hand.isPinching ? 'PINCH' : 'OPEN'
-      handRef.current.className = hand.isPinching
-        ? 'font-display text-[10px] text-jarvis-amber'
-        : 'font-display text-[10px] text-jarvis-ok'
+      // 'HOLD' = grab surviving a tracking dropout (see trackingGraceMs).
+      handRef.current.textContent = hand.stale ? 'HOLD' : hand.isPinching ? 'PINCH' : 'OPEN'
+      handRef.current.className = hand.stale
+        ? 'font-display text-[10px] text-jarvis-alert'
+        : hand.isPinching
+          ? 'font-display text-[10px] text-jarvis-amber'
+          : 'font-display text-[10px] text-jarvis-ok'
       barRef.current.style.width = `${Math.round(hand.pinch * 100)}%`
     }
 

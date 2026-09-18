@@ -4,7 +4,7 @@ export const SYSTEM = {
   name: 'J.A.R.V.I.S.',
   subtitle: 'Just A Rather Very Intelligent System',
   version: '0.1.0',
-  build: 'PHASE-03',
+  build: 'PHASE-03b',
 }
 
 // Boot lines. Each entry is [label, delayMs] — the delay is the pause BEFORE the line appears.
@@ -37,7 +37,29 @@ export const MEDIAPIPE = {
   modelPath:
     'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
   maxHands: 2, // drop to 1 if an older phone struggles
-  pinchThreshold: 0.6, // smoothed pinch strength that counts as "closed"
+
+  // Deliberately permissive. The defaults (0.5) make MediaPipe drop a hand the
+  // moment part of it leaves the frame; lower values let it hold on through
+  // partial occlusion and edge-of-frame cropping.
+  detectionConfidence: 0.3,
+  presenceConfidence: 0.3,
+  trackingConfidence: 0.3,
+
+  // Schmitt trigger bounds — see pinchLatch(). Entering needs a firmer pinch
+  // than holding one, which stops the state chattering at the boundary.
+  pinchEnter: 0.62,
+  pinchExit: 0.4,
+
+  /**
+   * How long a PINCHING hand survives a tracking dropout, in ms.
+   *
+   * MediaPipe loses the hand when it is partly out of frame. Without this, a
+   * grab dies the instant the wrist clips the edge of the screen. During the
+   * grace window the last known hand is republished with stale:true so the
+   * grab persists and the interaction stays continuous.
+   */
+  trackingGraceMs: 500,
+
   telemetryHz: 10, // how often summary data reaches React state
 }
 
@@ -46,7 +68,9 @@ export const MEDIAPIPE = {
 export const INTERACTION = {
   cameraDistance: 5, // camera z
   grabRadius: 0.7, // how close a pinch must be to latch onto the core
-  followLerp: 0.18, // position smoothing while grabbed (0 = frozen, 1 = instant)
+  followLerp: 0.4, // raised: the One Euro filter now does the heavy smoothing
+  // One Euro tuning for the grabbed position.
+  filter: { minCutoff: 1.6, beta: 0.06 },
   releaseLerp: 0.04, // drift back to home once released
   scaleLerp: 0.15,
   minScale: 0.45,

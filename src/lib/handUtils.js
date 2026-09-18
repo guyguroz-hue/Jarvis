@@ -80,15 +80,46 @@ export function handScale(landmarks) {
 }
 
 /**
- * Pinch strength, 0 (open) -> 1 (fingers touching).
+ * Pinch strength from 2D screen landmarks. 0 (open) -> 1 (touching).
  *
- * Divided by palm size on purpose: a raw thumb-to-index distance shrinks as the
- * hand moves away from the camera, so a fixed threshold would misfire at range.
+ * FALLBACK ONLY — prefer pinchStrength3D.
+ *
+ * This measures a PROJECTED distance, so it is not rotation-invariant: turning
+ * the hand toward profile foreshortens the palm, inflating the ratio and making
+ * a closed pinch read as open. Kept for the rare frame where MediaPipe returns
+ * no world landmarks.
  */
 export function pinchStrength(landmarks, { closed = 0.28, open = 0.85 } = {}) {
   const raw = dist2(landmarks[LM.THUMB_TIP], landmarks[LM.INDEX_TIP])
   const ratio = raw / handScale(landmarks)
   return 1 - invLerp(closed, open, ratio)
+}
+
+/**
+ * Pinch strength from METRIC 3D world landmarks. 0 (open) -> 1 (touching).
+ *
+ * MediaPipe's worldLandmarks are real coordinates in metres, origin at the hand's
+ * geometric centre — a true 3D reconstruction rather than a camera projection.
+ * Distances measured here therefore do NOT change when the hand rotates, which
+ * is exactly the failure mode of the 2D version above.
+ *
+ * Still normalized by the hand's own span so it works for any hand size.
+ */
+export function pinchStrength3D(world, { closed = 0.34, open = 1.0 } = {}) {
+  const span = dist3(world[LM.WRIST], world[LM.MIDDLE_MCP]) || 1e-6
+  const gap = dist3(world[LM.THUMB_TIP], world[LM.INDEX_TIP])
+  return 1 - invLerp(closed, open, gap / span)
+}
+
+/**
+ * Schmitt trigger for pinch state.
+ *
+ * A single threshold chatters when the signal sits near it. Requiring a higher
+ * value to ENTER the pinch than to LEAVE it gives a dead band, so a steady
+ * pinch stays latched.
+ */
+export function pinchLatch(strength, wasPinching, { enter = 0.62, exit = 0.42 } = {}) {
+  return wasPinching ? strength > exit : strength > enter
 }
 
 /** Midpoint between thumb and index tips — the natural "grab point". */

@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { INTERACTION } from '../../lib/constants'
 import { depthFromHandScale, projectLandmark, screenToWorld } from '../../lib/projection'
+import { Vec3Filter } from '../../lib/filters'
 
 const HOME = new THREE.Vector3(0, 0, 0)
 
@@ -30,7 +31,11 @@ export default function HoloCore({ handsRef, videoRef, mirrored = true, onGestur
     lastGesture: null,
   })
 
-  const tmp = useMemo(() => ({ a: new THREE.Vector3(), b: new THREE.Vector3() }), [])
+  const tmp = useMemo(() => ({ a: new THREE.Vector3(), b: new THREE.Vector3(), f: {} }), [])
+
+  // Adaptive smoothing for the grab target: heavy when the hand is still,
+  // barely any lag when it moves fast. A plain lerp cannot do both.
+  const smoother = useMemo(() => new Vec3Filter(INTERACTION.filter), [])
 
   /** Pinch point of a hand -> world position. */
   const handToWorld = (hand, camera, size, video, out) => {
@@ -60,6 +65,10 @@ export default function HoloCore({ handsRef, videoRef, mirrored = true, onGestur
     const pinching = hands.filter((h) => h.isPinching)
 
     let gesture = 'idle'
+
+    // A stale hand is one MediaPipe lost mid-grab; the tracker republishes it
+    // briefly so the interaction survives the dropout.
+    const holding = hands.some((h) => h.stale)
 
     if (pinching.length >= 2) {
       // ---- two-hand scale ----
@@ -98,8 +107,14 @@ export default function HoloCore({ handsRef, videoRef, mirrored = true, onGestur
 
     // ---- motion ----
     if (s.grabbed) {
-      g.position.lerp(s.target, INTERACTION.followLerp)
+      // Filter in world space, then ease in — One Euro kills jitter, the lerp
+      // adds a little inertia so the core feels like an object, not a cursor.
+      const f = smoother.filter(s.target, state.clock.elapsedTime, tmp.f)
+      tmp.b.set(f.x, f.y, f.z)
+      g.position.lerp(tmp.b, INTERACTION.followLerp)
+      if (holding) gesture = 'hold'
     } else {
+      smoother.reset()
       g.position.lerp(HOME, INTERACTION.releaseLerp)
       // Gentle idle bob, only when not held.
       g.position.y += Math.sin(state.clock.elapsedTime * 1.1) * 0.0012

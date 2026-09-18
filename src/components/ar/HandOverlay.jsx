@@ -54,6 +54,10 @@ export default function HandOverlay({ handsRef, videoRef, mirrored = true, activ
 
         const accent = hand.isPinching ? '#fbbf24' : '#22d3ee'
 
+        // A stale hand is a held grab surviving a tracking dropout. Draw it as
+        // a faded ghost so the state is visible rather than mysterious.
+        ctx.globalAlpha = hand.stale ? 0.35 : 1
+
         // Bones
         ctx.strokeStyle = accent
         ctx.lineWidth = 2
@@ -96,6 +100,7 @@ export default function HandOverlay({ handsRef, videoRef, mirrored = true, activ
         ctx.arc(cx, cy, 10 + hand.pinch * 10, 0, Math.PI * 2)
         ctx.stroke()
         ctx.shadowBlur = 0
+        ctx.globalAlpha = 1
       }
     }
 
