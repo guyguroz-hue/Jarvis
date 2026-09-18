@@ -139,8 +139,21 @@ visitor. These are read only inside `api/chat.js`, server-side.
 | Variable | Required | Default |
 | --- | --- | --- |
 | `SILICONFLOW_API_KEY` | yes | — |
-| `SILICONFLOW_MODEL` | no | `Qwen/Qwen2.5-7B-Instruct` |
+| `SILICONFLOW_MODEL` | no | `zai-org/GLM-5.3-Flash` |
 | `SILICONFLOW_BASE_URL` | no | `https://api.siliconflow.cn/v1` |
+
+### Choosing a model
+
+The reply is spoken aloud, so **latency dominates capability**. A 700B
+reasoning model produces a better answer several seconds too late; the task is
+two sentences of conversation. Prefer a `Flash` variant or a small model.
+
+Most current models are hybrid reasoning models, which matters twice over:
+their chain of thought adds seconds of silence before the first word, and if it
+lands in `content` rather than a separate field it gets displayed and **read
+out loud**. The proxy therefore requests `enable_thinking: false` (retrying
+without it if the model rejects the field), and the client strips
+`<think>…</think>` from the stream as a second line of defence.
 
 ### Endpoint exposure
 

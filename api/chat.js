@@ -11,7 +11,15 @@
 export const config = { runtime: 'edge' }
 
 const BASE_URL = process.env.SILICONFLOW_BASE_URL || 'https://api.siliconflow.cn/v1'
-const MODEL = process.env.SILICONFLOW_MODEL || 'Qwen/Qwen2.5-7B-Instruct'
+/**
+ * Pick a model with SILICONFLOW_MODEL. The default is a starting point, not a
+ * recommendation — browse the catalogue and choose for yourself.
+ *
+ * For a spoken assistant, latency beats capability: a huge reasoning model
+ * gives a better answer several seconds too late. Prefer a "Flash" variant or
+ * a small model; the task is two sentences of conversation.
+ */
+const MODEL = process.env.SILICONFLOW_MODEL || 'zai-org/GLM-5.3-Flash'
 
 // Abuse limits. This endpoint is unauthenticated, so anyone who finds the URL
 // can spend your credit — these caps bound the damage per request.
@@ -77,22 +85,39 @@ export default async function handler(request) {
   const total = history.reduce((n, m) => n + m.content.length, 0)
   if (total > MAX_CHARS) return json({ error: 'Conversation too long.' }, 413)
 
-  let upstream
-  try {
-    upstream = await fetch(`${BASE_URL}/chat/completions`, {
+  const base = {
+    model: payload.model || MODEL,
+    messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...history],
+    stream: true,
+    temperature: 0.6,
+    max_tokens: MAX_TOKENS,
+  }
+
+  const send = (body) =>
+    fetch(`${BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${key}`,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({
-        model: payload.model || MODEL,
-        messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...history],
-        stream: true,
-        temperature: 0.6,
-        max_tokens: MAX_TOKENS,
-      }),
+      body: JSON.stringify(body),
     })
+
+  let upstream
+  try {
+    /**
+     * Ask hybrid reasoning models to skip their chain of thought. Thinking adds
+     * seconds of silence before the first word, which is intolerable when the
+     * reply is spoken aloud.
+     *
+     * Not every model accepts the parameter, and some reject the whole request
+     * for an unknown field — so a 400 is retried once without it rather than
+     * failing outright.
+     */
+    upstream = await send({ ...base, enable_thinking: false })
+    if (upstream.status === 400) {
+      upstream = await send(base)
+    }
   } catch (err) {
     return json({ error: `Upstream unreachable: ${err.message}` }, 502)
   }
@@ -100,8 +125,20 @@ export default async function handler(request) {
   if (!upstream.ok || !upstream.body) {
     const detail = await upstream.text().catch(() => '')
     // Surface the status but never echo the key or full upstream headers.
+    // 401 is almost always a key/region mismatch — say so, since the raw
+    // upstream message is rarely helpful.
+    const hint =
+      upstream.status === 401
+        ? 'Check SILICONFLOW_API_KEY, and that SILICONFLOW_BASE_URL matches the region you registered in (.com keys do not work against .cn).'
+        : upstream.status === 404
+          ? `Model "${base.model}" was not found. Set SILICONFLOW_MODEL to one from the catalogue.`
+          : undefined
+
     return json(
-      { error: `Upstream error ${upstream.status}`, detail: detail.slice(0, 500) },
+      {
+        error: hint ?? `Upstream error ${upstream.status}`,
+        detail: detail.slice(0, 300),
+      },
       upstream.status === 401 ? 500 : 502
     )
   }

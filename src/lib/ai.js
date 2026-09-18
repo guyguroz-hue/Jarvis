@@ -5,6 +5,66 @@
  * credential is ever present in the browser.
  */
 
+const OPEN_TAG = '<think>'
+const CLOSE_TAG = '</think>'
+
+/** Longest suffix of `text` that is also a prefix of `tag`. */
+function tailPartial(text, tag) {
+  const max = Math.min(tag.length - 1, text.length)
+  for (let n = max; n > 0; n--) {
+    if (text.endsWith(tag.slice(0, n))) return n
+  }
+  return 0
+}
+
+/**
+ * Strip <think>…</think> reasoning from a token stream.
+ *
+ * Nearly every current model is a hybrid reasoning model. When its chain of
+ * thought lands in `content` rather than a separate field, it would be
+ * displayed on the HUD and READ ALOUD — JARVIS narrating its own deliberation.
+ *
+ * Tags arrive split across network chunks, so a partial tag at the tail is held
+ * back rather than emitted, and released once the next chunk disambiguates it.
+ */
+export function createThinkStripper() {
+  let inside = false
+  let pending = ''
+
+  return function push(chunk) {
+    let text = pending + chunk
+    pending = ''
+    let out = ''
+
+    while (text) {
+      if (!inside) {
+        const at = text.indexOf(OPEN_TAG)
+        if (at !== -1) {
+          out += text.slice(0, at)
+          text = text.slice(at + OPEN_TAG.length)
+          inside = true
+          continue
+        }
+        const hold = tailPartial(text, OPEN_TAG)
+        out += text.slice(0, text.length - hold)
+        pending = hold ? text.slice(text.length - hold) : ''
+        text = ''
+      } else {
+        const at = text.indexOf(CLOSE_TAG)
+        if (at !== -1) {
+          text = text.slice(at + CLOSE_TAG.length)
+          inside = false
+          continue
+        }
+        pending = text.slice(text.length - tailPartial(text, CLOSE_TAG))
+        text = ''
+      }
+    }
+
+    return out
+  }
+}
+
 /** Parse one SSE frame's `data:` payload. Returns null for keep-alives. */
 function parseFrame(frame) {
   const line = frame.split('\n').find((l) => l.startsWith('data:'))
@@ -43,6 +103,7 @@ export async function streamChat(messages, { signal, onToken } = {}) {
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
+  const strip = createThinkStripper()
   let buffer = ''
   let full = ''
 
@@ -61,13 +122,19 @@ export async function streamChat(messages, { signal, onToken } = {}) {
       if (!parsed) continue
       if (parsed === '[DONE]') return full
 
+      // Only `content` is read. Models that expose their chain of thought as a
+      // separate `reasoning_content` field are therefore ignored outright; the
+      // stripper handles the ones that inline it as <think> tags instead.
       const delta = parsed.choices?.[0]?.delta?.content
       if (delta) {
-        full += delta
-        onToken?.(delta)
+        const visible = strip(delta)
+        if (visible) {
+          full += visible
+          onToken?.(visible)
+        }
       }
     }
   }
 
-  return full
+  return full.trimStart()
 }
