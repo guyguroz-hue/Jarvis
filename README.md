@@ -18,7 +18,7 @@ voice-driven AI assistant.
 ## Build phases
 
 - [x] **Phase 1** — Architecture, toolchain, HUD shell
-- [ ] **Phase 2** — AR camera layer + MediaPipe hand-tracking hook
+- [x] **Phase 2** — AR camera layer + MediaPipe hand-tracking hook
 - [ ] **Phase 3** — R3F canvas, hand coords mapped to a 3D object
 - [ ] **Phase 4** — Sci-fi HUD panels (telemetry, logs)
 - [ ] **Phase 5** — Voice hooks + SiliconFlow brain
@@ -29,10 +29,19 @@ voice-driven AI assistant.
 The interface is three stacked full-screen layers:
 
 ```
-z-0   <video>   AR camera feed          (Phase 2)
+z-0   <video>   AR camera feed          (Phase 2) ✅
+z-5   <canvas>  hand skeleton overlay   (Phase 2) ✅
 z-10  <Canvas>  React Three Fiber scene (Phase 3)
 z-20  <div>     Tailwind HUD overlay    (Phase 4)
 ```
+
+### Tracking performance contract
+
+Per-frame landmark data is written to a **ref** (`handsRef`), never to React
+state. Calling `setState` at 60 fps would re-render the tree 60 times a second.
+Consumers needing per-frame data read `handsRef.current` inside `useFrame` or
+their own `requestAnimationFrame` loop, outside React's render cycle. Only
+summary data (hand count, FPS) reaches state, throttled to 10 Hz.
 
 ## Structure
 
