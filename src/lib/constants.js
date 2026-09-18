@@ -4,7 +4,7 @@ export const SYSTEM = {
   name: 'J.A.R.V.I.S.',
   subtitle: 'Just A Rather Very Intelligent System',
   version: '0.1.0',
-  build: 'PHASE-03b',
+  build: 'PHASE-04',
 }
 
 // Boot lines. Each entry is [label, delayMs] — the delay is the pause BEFORE the line appears.

@@ -1,21 +1,31 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { LM } from '../../lib/handUtils'
 import { projectLandmark } from '../../lib/projection'
+import RadialGauge from './RadialGauge'
+import Sparkline from './Sparkline'
+
+const HISTORY = 24
 
 /**
- * Live XYZ + pinch readout.
+ * Live hand telemetry: XYZ, pinch meter, and an FPS trace.
  *
- * Writes numbers straight into DOM nodes via refs inside a rAF loop. Rendering
- * these through React state would re-render the tree ~60x/second for the sake of
- * a few digits — the exact cost the tracking architecture exists to avoid.
+ * Per-frame values are written straight into DOM nodes and the gauge's
+ * imperative handle from a single rAF loop. Rendering them through React state
+ * would re-render the tree ~60x/second to move a few digits.
  */
 export default function TrackingPanel({ handsRef, videoRef, telemetry, mirrored, active }) {
   const xRef = useRef(null)
   const yRef = useRef(null)
   const zRef = useRef(null)
-  const pinchRef = useRef(null)
-  const barRef = useRef(null)
-  const handRef = useRef(null)
+  const stateRef = useRef(null)
+  const gauge = useRef(null)
+
+  // FPS history. telemetry.fps updates once a second, so state is fine here.
+  const [fpsHistory, setFpsHistory] = useState([])
+  useEffect(() => {
+    if (!telemetry.fps) return
+    setFpsHistory((h) => [...h, telemetry.fps].slice(-HISTORY))
+  }, [telemetry.fps])
 
   useEffect(() => {
     if (!active) return
@@ -30,9 +40,9 @@ export default function TrackingPanel({ handsRef, videoRef, telemetry, mirrored,
           xRef.current.textContent = '--.--'
           yRef.current.textContent = '--.--'
           zRef.current.textContent = '--.--'
-          pinchRef.current.textContent = '--'
-          handRef.current.textContent = 'NONE'
-          barRef.current.style.width = '0%'
+          stateRef.current.textContent = 'NONE'
+          stateRef.current.className = 'font-display text-[10px] text-jarvis-ice/40'
+          gauge.current?.setValue(0)
         }
         return
       }
@@ -46,18 +56,23 @@ export default function TrackingPanel({ handsRef, videoRef, telemetry, mirrored,
         window.innerHeight,
         mirrored
       )
+
       xRef.current.textContent = p.x.toFixed(3)
       yRef.current.textContent = p.y.toFixed(3)
       zRef.current.textContent = p.z.toFixed(3)
-      pinchRef.current.textContent = `${Math.round(hand.pinch * 100)}%`
-      // 'HOLD' = grab surviving a tracking dropout (see trackingGraceMs).
-      handRef.current.textContent = hand.stale ? 'HOLD' : hand.isPinching ? 'PINCH' : 'OPEN'
-      handRef.current.className = hand.stale
-        ? 'font-display text-[10px] text-jarvis-alert'
+
+      // Text state, not colour alone — the status hues are hard to separate
+      // under red-green colour blindness.
+      const label = hand.stale ? 'HOLD' : hand.isPinching ? 'PINCH' : 'OPEN'
+      const tone = hand.stale
+        ? 'text-jarvis-alert'
         : hand.isPinching
-          ? 'font-display text-[10px] text-jarvis-amber'
-          : 'font-display text-[10px] text-jarvis-ok'
-      barRef.current.style.width = `${Math.round(hand.pinch * 100)}%`
+          ? 'text-jarvis-amber'
+          : 'text-jarvis-ok'
+      stateRef.current.textContent = label
+      stateRef.current.className = `font-display text-[10px] ${tone}`
+
+      gauge.current?.setValue(hand.pinch)
     }
 
     raf = requestAnimationFrame(update)
@@ -68,46 +83,42 @@ export default function TrackingPanel({ handsRef, videoRef, telemetry, mirrored,
     <div className="glass-panel hud-corners p-3">
       <div className="flex items-center justify-between">
         <p className="label">Telemetry</p>
-        <span ref={handRef} className="font-display text-[10px] text-jarvis-ice/40">
+        <span ref={stateRef} className="font-display text-[10px] text-jarvis-ice/40">
           NONE
         </span>
       </div>
 
-      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-        {[
-          ['X', xRef],
-          ['Y', yRef],
-          ['Z', zRef],
-        ].map(([axis, ref]) => (
-          <div key={axis}>
-            <p className="label !text-[9px]">{axis}</p>
-            <p ref={ref} className="font-mono text-[11px] tabular-nums text-jarvis-cyan">
-              --.--
-            </p>
-          </div>
-        ))}
+      <div className="mt-3 flex items-center gap-3">
+        <RadialGauge ref={gauge} label="pinch" />
+
+        <div className="min-w-0 flex-1 space-y-1">
+          {[
+            ['X', xRef],
+            ['Y', yRef],
+            ['Z', zRef],
+          ].map(([axis, ref]) => (
+            <div key={axis} className="flex items-baseline justify-between gap-2">
+              <span className="label !text-[9px]">{axis}</span>
+              <span ref={ref} className="font-mono text-[11px] tabular-nums text-jarvis-cyan">
+                --.--
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div className="mt-3">
+      <div className="mt-3 border-t border-jarvis-cyan/20 pt-2">
         <div className="flex items-center justify-between">
-          <span className="label !text-[9px]">Pinch</span>
-          <span ref={pinchRef} className="font-mono text-[10px] text-jarvis-ice/70">
-            --
+          {/* Kept terse: this panel is ~176px wide on a phone and longer
+              labels wrap onto a second line. */}
+          <span className="label !text-[9px]">FPS</span>
+          <span className="label !text-[9px] whitespace-nowrap">
+            {telemetry.handCount}H{telemetry.delegate ? ` · ${telemetry.delegate}` : ''}
           </span>
         </div>
-        <div className="mt-1 h-1 w-full overflow-hidden rounded bg-jarvis-cyan/15">
-          <div ref={barRef} className="h-full bg-jarvis-cyan transition-none" style={{ width: 0 }} />
+        <div className="mt-1">
+          <Sparkline data={fpsHistory} width={112} height={24} />
         </div>
-      </div>
-
-      <div className="mt-3 flex justify-between border-t border-jarvis-cyan/20 pt-2">
-        <span className="label !text-[9px]">
-          Hands <span className="text-jarvis-cyan">{telemetry.handCount}</span>
-        </span>
-        <span className="label !text-[9px]">
-          {telemetry.fps} FPS
-          {telemetry.delegate ? ` · ${telemetry.delegate}` : ''}
-        </span>
       </div>
     </div>
   )

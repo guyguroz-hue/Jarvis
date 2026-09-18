@@ -20,7 +20,7 @@ voice-driven AI assistant.
 - [x] **Phase 1** — Architecture, toolchain, HUD shell
 - [x] **Phase 2** — AR camera layer + MediaPipe hand-tracking hook
 - [x] **Phase 3** — R3F canvas, hand coords mapped to a 3D object
-- [ ] **Phase 4** — Sci-fi HUD panels (telemetry, logs)
+- [x] **Phase 4** — Sci-fi HUD panels (telemetry, logs)
 - [ ] **Phase 5** — Voice hooks + SiliconFlow brain
 - [ ] **Phase 6** — Full integration
 
@@ -32,7 +32,8 @@ The interface is three stacked full-screen layers:
 z-0   <video>   AR camera feed          (Phase 2) ✅
 z-5   <canvas>  hand skeleton overlay   (Phase 2) ✅
 z-10  <Canvas>  React Three Fiber scene (Phase 3) ✅
-z-20  <div>     Tailwind HUD overlay    (Phase 4)
+z-14  frame / z-15 reticle              (Phase 4) ✅
+z-20  <div>     Tailwind HUD overlay    (Phase 4) ✅
 ```
 
 ### Coordinate projection
@@ -47,6 +48,20 @@ screen — so mapping a landmark straight to screen space misplaces it badly.
 `projectLandmark()` compensates for that crop and for selfie mirroring.
 
 Run `npm test` to exercise the projection maths.
+
+### HUD conventions
+
+- **Form follows the measure.** Bounded 0..1 values (pinch) get an arc meter;
+  change-over-time (frame rate) gets a sparkline; single headline values
+  (uptime, power, link) get stat tiles rather than decorative gauges.
+- **Status is never colour alone.** The status hues separate by only ΔE 7.3
+  between amber and green under protanopia, so every state ships a text label
+  too — `ONLINE`/`STANDBY`, `PINCH`/`HOLD`, and the `SYS`/`OK`/`WRN`/`ERR` log
+  tags. Contrast against the panel surface passes at >= 3:1 for all four.
+- **Unsupported readings are omitted, never faked.** Battery and network are
+  Chrome/Android only; those tiles simply do not render elsewhere.
+- **Density toggle.** `MIN` strips the HUD back to header and footer, for an
+  unobstructed AR view on a small screen.
 
 ### Gesture robustness
 
